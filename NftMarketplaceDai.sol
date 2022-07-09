@@ -85,11 +85,11 @@ contract NftMarketplaceDai {
     }
 
     // Main functions
-    /// @notice Lists NFT on the marketplace after passing checks
+    /// @notice Lists NFT on the marketplace after passing checks. 
     /// @dev After modifier checks are passed, NFT is listed 
     /// @param  nftAddress The address of NFT contract to which this NFT belongs 
     /// @param  tokenId Id of a token that the user wants to list
-    /// @param  price NFT will be listed with this price
+    /// @param  price NFT will be listed with this price. Price is set in ETH and converted to DAI.
     
     function listItem(address nftAddress, uint256 tokenId, uint256 price) external 
     notListed(nftAddress,tokenId,msg.sender) isOwner(nftAddress,tokenId,msg.sender){
@@ -106,6 +106,12 @@ contract NftMarketplaceDai {
         emit ItemListed(msg.sender, nftAddress, tokenId, price); 
     }
 
+/// @notice Buys an item using DAI after passing checks 
+/// @dev After modifier checks are passed and DAI value is compared to ETH value, NFT is bought 
+/// @param  nftAddress The address of NFT contract to which this NFT belongs 
+/// @param  tokenId Id of a token that the user wants to buy
+/// @param  daiAmountToSend Amount of DAI to pay for an item
+    
     function buyItem(address nftAddress, uint256 tokenId, uint256 daiAmountToSend) external payable IsListed(nftAddress,tokenId) {
         Listing memory item = s_listings[nftAddress][tokenId];
         (,int256 daiToEthValue,,,) = i_PriceFeed.latestRoundData();  
