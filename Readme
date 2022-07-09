@@ -1,0 +1,84 @@
+This contract is based on contract: https://github.com/ktry1/NFT-Marketplace-backend-fcc;
+Dai conversion protototype for the Marketplace contract
+Uses: Chainlink priceFeeds and @openzeppelin interface IERC20 
+
+Changes: 
+Functions buyItem and listItem converted for Price in DAI; 
+Added IERC20 state variable i_DaiTokenContract and imported openzeppelin interface IERC20;
+Constructor requires additional parameter daiTokenAddress;
+
+Problems:
+I performed tests for transactions using Rinkeby tesnet contract 0xdf8a08aed8b4f1de237c405d893e1e48d528d10f 
+With 100 DAI on my account from contract 0xc7AD46e0b8a400Bb3C915120d284AafbA8fc4735
+For some reason, function calls i_DaiContract.transferFrom(address from, address to, uint256 amount) throws an error "Dai/insufficient-allowance"
+Allowance was increased using i_DaiContract.approve(address spender, uint256 amount) and passed successfully but did not actually increase (checked with i_DaiContract.allowance )
+
+
+// Changed Parts //
+
+//State Variables //
+IERC20 private i_DaiContract;
+
+
+//Constructor//
+constructor(address PriceFeedAddress, address daiTokenAddress){
+        i_PriceFeed = AggregatorV3Interface(PriceFeedAddress);
+        i_DaiContract = IERC20(daiTokenAddress);
+    }
+
+//Functions//
+
+/// @notice Lists NFT on the marketplace after passing checks. 
+/// @dev After modifier checks are passed, NFT is listed 
+/// @param  nftAddress The address of NFT contract to which this NFT belongs 
+/// @param  tokenId Id of a token that the user wants to list
+/// @param  price NFT will be listed with this price. Price is set in ETH and converted to DAI.
+ function listItem(address nftAddress, uint256 tokenId, uint256 price) external 
+    notListed(nftAddress,tokenId,msg.sender) isOwner(nftAddress,tokenId,msg.sender){
+        if (price<=0){
+            revert NftMarketplace__InvalidPrice();
+        }
+        (,int256 daiToEthValue,,,) = i_PriceFeed.latestRoundData();
+        // Price is set in ETH and converted to DAI 
+        uint256 priceInDai = (1*10^18)/uint256(daiToEthValue);
+        IERC721 nft = IERC721(nftAddress);
+        if (nft.getApproved(tokenId) != address(this)){
+          revert NftMarketplace__NotApproved();  
+        }
+        s_listings[nftAddress][tokenId] = Listing(priceInDai,msg.sender);
+        emit ItemListed(msg.sender, nftAddress, tokenId, price); 
+    }
+
+
+// @notice Buys an item using DAI after passing checks 
+/// @dev After modifier checks are passed and DAI value is compared to ETH value, NFT is bought 
+/// @param  nftAddress The address of NFT contract to which this NFT belongs 
+/// @param  tokenId Id of a token that the user wants to buy
+/// @param  daiAmountToSend Amount of DAI to pay for an item
+function buyItem(address nftAddress, uint256 tokenId, uint256 daiAmountToSend) external payable IsListed(nftAddress,tokenId) {
+        Listing memory item = s_listings[nftAddress][tokenId];
+        (,int256 daiToEthValue,,,) = i_PriceFeed.latestRoundData();  
+        uint256 userBalance = i_DaiContract.balanceOf(msg.sender);
+        if (userBalance < daiAmountToSend){
+            revert NftMarketplace__NotEnoughDaiBalance(userBalance);
+        }
+        if(daiAmountToSend * uint256(daiToEthValue) < item.price*10^18){
+            revert NftMarketplace__PriceNotMet(nftAddress, tokenId, item.price);
+        }
+        delete (s_listings[nftAddress][tokenId]);
+        bool success = i_DaiContract.approve(address(this), daiAmountToSend);
+        if (!success){
+            revert NftMarketplace__TransferFailed();
+        }
+        bool success2 = i_DaiContract.transferFrom(msg.sender, address(this), daiAmountToSend);
+        if (!success2){
+            revert NftMarketplace__TransferFailed();
+        }
+        s_proceeds[item.seller] += daiAmountToSend;
+        IERC721(nftAddress).safeTransferFrom(item.seller, msg.sender, tokenId);
+        // Check to make sure NFT was Transfered
+        emit ItemBought(msg.sender, nftAddress, tokenId, item.price);
+       
+    }
+
+
